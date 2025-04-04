@@ -1,0 +1,17 @@
+# This is project 1
+
+## Section 1: Data
+
+I cleaned some data
+
+## Section 2: Analysis
+
+I analyzed some data
+
+```{r}
+#| message: false
+
+library(tidyverse)
+mtcars |> 
+  ggplot(aes(x = wt, y = mpg)) + geom_point()
+```

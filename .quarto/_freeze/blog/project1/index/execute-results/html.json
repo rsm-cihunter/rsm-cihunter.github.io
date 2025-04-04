@@ -1,0 +1,16 @@
+{
+  "hash": "b2974c6364937b1cf70726f2b1c53dd5",
+  "result": {
+    "markdown": "# This is project 1\n\n## Section 1: Data\n\nI cleaned some data\n\n## Section 2: Analysis\n\nI analyzed some data\n\n\n::: {.cell}\n\n```{.r .cell-code}\nlibrary(tidyverse)\nmtcars |> \n  ggplot(aes(x = wt, y = mpg)) + geom_point()\n```\n\n::: {.cell-output-display}\n![](index_files/figure-html/unnamed-chunk-1-1.png){width=672}\n:::\n:::",
+    "supporting": [
+      "index_files"
+    ],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}
