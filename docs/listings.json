@@ -1,6 +1,9 @@
 [
   {
     "listing": "/blog.html",
-    "items": []
+    "items": [
+      "/blog/project1/index.html",
+      "/blog/project2/index.html"
+    ]
   }
 ]
