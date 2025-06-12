@@ -11,6 +11,7 @@ format: html
 ```{r, message=FALSE, warning=FALSE}
 library(readr)
 
+
 # load datasets
 yogurt <- read_csv("yogurt_data.csv", show_col_types = FALSE)
 penguins <- read_csv("palmer_penguins.csv", show_col_types = FALSE)
