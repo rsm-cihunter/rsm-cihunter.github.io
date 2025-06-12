@@ -1,5 +1,5 @@
 ---
-title: "Poisson Regression Examples"
+title: "Custom K-Means and KNN Implementation"
 author: "Charlotte Hunter"
 date: today
 callout-appearance: minimal # this hides the blue "i" icon on .callout-notes
@@ -8,419 +8,310 @@ code-tools: true
 format: html
 ---
 
-## Blueprinty Case Study
-
-### Introduction
-
-Blueprinty is a small firm that makes software for developing blueprints specifically for submitting patent applications to the US patent office. Their marketing team would like to make the claim that patent applicants using Blueprinty's software are more successful in getting their patent applications approved. Ideal data to study such an effect might include the success rate of patent applications before using Blueprinty's software and after using it. Unfortunately, such data is not available. 
-
-However, Blueprinty has collected data on 1,500 mature (non-startup) engineering firms. The data include each firm's number of patents awarded over the last 5 years, regional location, age since incorporation, and whether or not the firm uses Blueprinty's software. The marketing team would like to use this data to make the claim that firms using Blueprinty's software are more successful in getting their patent applications approved.
-
-
-### Data
-
-```{r, include=FALSE, warning=FALSE, message=FALSE}
-setwd("/Users/charlottehunter/Desktop/MGTA 495 Data")
-
-library(ggplot2)
-library(dplyr)
-library(knitr)
+```{r, message=FALSE, warning=FALSE}
 library(readr)
 
-airbnb <- read_csv("airbnb.csv", show_col_types = FALSE)
-blueprinty <- read_csv("blueprinty.csv", show_col_types = FALSE)
+# load datasets
+yogurt <- read_csv("yogurt_data.csv", show_col_types = FALSE)
+penguins <- read_csv("palmer_penguins.csv", show_col_types = FALSE)
+keydrivers <- read_csv("data_for_drivers_analysis.csv", show_col_types = FALSE)
 ```
 
-```{r}
-# histogram of patents
-ggplot(blueprinty, aes(x = patents, fill = factor(iscustomer))) +
-  geom_histogram(binwidth = 1, position = "dodge", alpha = 0.7) +
-  labs(
-    title = "Histogram of Patents by Customer Status",
-    x = "Number of Patents",
-    y = "Count",
-    fill = "Customer Status"
-  ) +
-  scale_fill_manual(values = c("0" = "gray", "1" = "steelblue"),
-                    labels = c("0" = "Non-Customer", "1" = "Customer"))
+## 1a. K-Means
+
+A custom K-means algorithm was implemented and applied to the Palmer Penguins dataset using `bill_length_mm` and `flipper_length_mm` as input features. The custom results are visualized step-by-step and later compared to R’s built-in `kmeans()` function.
+
+```{r, fig.height=10, fig.width=10, warning=FALSE, message=FALSE}
+# load libraries
+library(tidyverse)
+library(patchwork)
+
+# load and clean penguin data
+penguins <- read_csv("palmer_penguins.csv", show_col_types = FALSE)
+
+penguins_clean <- penguins %>%
+  select(bill_length_mm, flipper_length_mm) %>%
+  filter(!is.na(bill_length_mm) & !is.na(flipper_length_mm))
+
+# define custom kmeans
+kmeans_custom <- function(data, k, max_iter = 10) {
+  set.seed(123)
+  data <- as.matrix(data)
+  n <- nrow(data)
+  
+  # init centroids
+  centroids <- data[sample(1:n, k), ]
+  clusters <- rep(0, n)
+  history <- list(centroids)
+  
+  for (iter in 1:max_iter) {
+    # assign clusters
+    distances <- as.matrix(dist(rbind(centroids, data)))[1:k, (k+1):(k+n)]
+    clusters <- apply(distances, 2, which.min)
+    
+    # update centroids
+    new_centroids <- matrix(NA, nrow = k, ncol = ncol(data))
+    for (i in 1:k) {
+      group <- data[clusters == i, , drop = FALSE]
+      if (nrow(group) > 0) {
+        new_centroids[i, ] <- colMeans(group)
+      } else {
+        new_centroids[i, ] <- centroids[i, ]
+      }
+    }
+    
+    history[[iter + 1]] <- new_centroids
+    if (all(new_centroids == centroids)) break
+    centroids <- new_centroids
+  }
+  
+  list(clusters = clusters, centroids = centroids, history = history)
+}
+
+# run custom kmeans
+set.seed(42)
+data_matrix <- penguins_clean[, c("bill_length_mm", "flipper_length_mm")]
+result <- kmeans_custom(data_matrix, k = 3)
+penguins_clean$custom_cluster <- as.factor(result$clusters)
 ```
+These plots show how the clusters and centroids evolve during each step of the custom K-means algorithm. At iteration 0, the centroids are randomly placed and don’t reflect the actual structure of the data. As the algorithm runs, the centroids begin to move toward the center of the groups, and the cluster assignments become more meaningful. By iteration 5 or 6, the centroids have mostly stabilized, and the cluster boundaries are clear. The algorithm continues to refine the assignments slightly, but there’s very little change after iteration 7. This suggests that the model has converged and the final clusters are consistent and well-separated based on bill length and flipper length.
 
-```{r, warning=FALSE, message=FALSE}
-# average patents table
-blueprinty %>%
-  group_by(iscustomer) %>%
-  summarize(mean_patents = mean(patents, na.rm = TRUE)) %>%
-  mutate(
-    iscustomer = ifelse(iscustomer == 1, "Customer", "Non-Customer")
-  ) %>%
-  kable(digits = 2, col.names = c("Customer Status", "Average Number of Patents"),
-        caption = "Average Patents by Customer Status")
-```
+To confirm that the custom implementation works as expected, the same clustering task was repeated using R’s built-in `kmeans()` function. The plot below shows the result with k = 3. The clusters are clearly separated, and the centroids (shown as black asterisks) are in nearly the same positions as the custom version. This provides a good check that the custom algorithm is producing valid and consistent results.
 
-Customers tend to have a higher number of patents than non-customers. The average for customers is 4.13 patents, compared to 3.47 for non-customers. The histogram shows that customers are more likely to have higher patent counts, with their distribution shifted to the right. Non-customers are more concentrated in the 0–3 patent range, while customers are more represented in the 4–8 range. This suggests a positive relationship between patent ownership and the likelihood of being a customer.
+```{r, fig.height=5, fig.width=6, fig.align='center'}
+# run built-in kmeans
+k_builtin <- kmeans(data_matrix, centers = 3)
+penguins_clean$builtin_cluster <- as.factor(k_builtin$cluster)
 
-```{r}
-# boxplot age distribution
-ggplot(blueprinty, aes(x = factor(iscustomer), y = age, fill = factor(iscustomer))) +
-  geom_boxplot() +
-  labs(
-    title = "Age Distribution by Customer Status",
-    x = "Customer Status",
-    y = "Age",
-    fill = "Customer"
-  ) +
-  scale_fill_manual(values = c("0" = "gray", "1" = "steelblue"),
-                    labels = c("0" = "Non-Customer", "1" = "Customer"))
-```
+# extract and rename centers
+centers_builtin <- as.data.frame(k_builtin$centers)
+names(centers_builtin) <- c("bill_length_mm", "flipper_length_mm")
 
-```{r}
-# mean age table
-blueprinty %>%
-  group_by(iscustomer) %>%
-  summarize(mean_age = mean(age, na.rm = TRUE)) %>%
-  mutate(
-    iscustomer = ifelse(iscustomer == 1, "Customer", "Non-Customer")
-  ) %>%
-  kable(digits = 2, col.names = c("Customer Status", "Average Age"),
-        caption = "Average Age by Customer Status")
-```
-
-Customers are slightly older than non-customers on average (26.9 vs. 26.1 years). The boxplot shows similar distributions, but customers have a slightly higher median and a longer upper tail. This suggests that customer status is somewhat associated with age, though the difference is modest.
-
-```{r}
-# proportions for each region by customer status
-region_customer_prop <- blueprinty %>%
-  group_by(region, iscustomer) %>%
-  summarise(count = n(), .groups = "drop") %>%
-  group_by(region) %>%
-  mutate(prop = count / sum(count)) %>%
-  ungroup() %>%
-  mutate(iscustomer = factor(iscustomer, labels = c("Non-Customer", "Customer")))
-
-# bar plot 
-ggplot(region_customer_prop, aes(x = region, y = prop, fill = iscustomer)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.7)) +
-  labs(
-    title = "Proportion of Customers and Non-Customers by Region",
-    x = "Region",
-    y = "Proportion",
-    fill = "Customer Status"
-  ) +
-  scale_y_continuous(labels = scales::percent_format()) +
+# plot built-in result
+ggplot(penguins_clean, aes(bill_length_mm, flipper_length_mm)) +
+  geom_point(aes(color = builtin_cluster), alpha = 0.6) +
+  geom_point(data = centers_builtin,
+             aes(bill_length_mm, flipper_length_mm),
+             color = "black", shape = 8, size = 4) +
+  labs(title = "Built-in K-Means Clustering",
+       x = "Bill Length (mm)",
+       y = "Flipper Length (mm)") +
   theme_minimal()
 ```
 
-Regional differences are more pronounced. In the Northeast, over half of the firms are customers — a much higher proportion than any other region. In contrast, regions like the Midwest, Northwest, South, and Southwest have much lower customer proportions (generally below 20%). This suggests strong regional variation in customer conversion, with the Northeast standing out as Blueprinty’s most successful market.
+The built-in `kmeans()` function grouped the penguins into three clusters that align closely with the structure seen in the custom K-means results. The centroids are placed in the same general locations, and the clusters themselves are well-formed and mostly non-overlapping. This confirms that the built-in algorithm arrived at a similar solution, and reinforces that the data naturally separates into three distinct groups based on bill length and flipper length. These groups likely correspond to meaningful biological differences, such as different penguin species.
 
-### Estimation of Simple Poisson Model
+After confirming that the clustering works, the next step is to figure out how many clusters actually make sense for this dataset. To do that, two common methods were used: the elbow method, which looks at how the within-cluster sum of squares (WCSS) changes with different values of k, and the silhouette method, which measures how well-defined the clusters are.
 
-Since our outcome variable of interest can only be small integer values per a set unit of time, we can use a Poisson density to model the number of patents awarded to each engineering firm over the last 5 years. We start by estimating a simple Poisson model via Maximum Likelihood.
+```{r, fig.width=6, fig.height=5, fig.align='center'}
+library(cluster)  
 
-Assume we have \( n \) independent observations \( Y_1, Y_2, \dots, Y_n \), each distributed as:
+# extract numeric matrix
+data_matrix <- penguins_clean[, c("bill_length_mm", "flipper_length_mm")]
 
-$$
-Y_i \sim \text{Poisson}(\lambda)
-$$
+# init vectors
+wcss_values <- numeric()
+silhouette_values <- numeric()
 
-The probability mass function is:
+# loop over k
+for (k in 2:7) {
+  km <- kmeans(data_matrix, centers = k, nstart = 20)
+  wcss_values[k] <- km$tot.withinss
 
-$$
-f(Y_i \mid \lambda) = \frac{e^{-\lambda} \lambda^{Y_i}}{Y_i!}
-$$
-
-Since the observations are independent, the **likelihood function** is the product of their individual densities:
-
-$$
-\mathcal{L}(\lambda \mid Y_1, \dots, Y_n) = \prod_{i=1}^n \frac{e^{-\lambda} \lambda^{Y_i}}{Y_i!}
-$$
-
-This simplifies to:
-
-$$
-\mathcal{L}(\lambda) = \frac{e^{-n\lambda} \lambda^{\sum_{i=1}^n Y_i}}{\prod_{i=1}^n Y_i!}
-$$
-
-```{r}
-# log-likelihood function for Poisson model
-poisson_loglikelihood <- function(lambda, Y) {
-  if (lambda <= 0) return(-Inf)  # Invalid for log
-  n <- length(Y)
-  ll <- -n * lambda + sum(Y) * log(lambda) - sum(lgamma(Y + 1))
-  return(ll)
-}
-```
-
-```{r}
-# use the observed number 
-y_data <- blueprinty$patents
-
-# define a sequence of lambda values
-lambda_vals <- seq(0.1, 10, length.out = 200)
-
-# log-likelihoods
-log_likelihoods <- sapply(lambda_vals, function(l) poisson_loglikelihood(l, y_data))
-
-# plot
-plot(lambda_vals, log_likelihoods, type = "l",
-     main = "Log-Likelihood of Poisson Model",
-     xlab = expression(lambda),
-     ylab = "Log-Likelihood",
-     col = "steelblue", lwd = 2)
-```
-
-We start with the log-likelihood function for \( n \) independent observations from a Poisson distribution:
-
-$$
-\log \mathcal{L}(\lambda) = -n\lambda + \left(\sum_{i=1}^n Y_i\right) \log \lambda - \sum_{i=1}^n \log(Y_i!)
-$$
-
-Taking the derivative with respect to \( \lambda \):
-
-$$
-\frac{d}{d\lambda} \log \mathcal{L}(\lambda) = -n + \frac{\sum_{i=1}^n Y_i}{\lambda}
-$$
-
-Setting the derivative equal to zero:
-
-$$
--n + \frac{\sum_{i=1}^n Y_i}{\lambda} = 0
-\quad \Rightarrow \quad
-\hat{\lambda} = \frac{1}{n} \sum_{i=1}^n Y_i = \bar{Y}
-$$
-
-This result makes intuitive sense, as the mean of a Poisson distribution is \(\lambda\), so the MLE is simply the sample mean.
-
-```{r}
-# negative log-likelihood wrapper for use with optim()
-neg_log_likelihood_poisson <- function(lambda, Y) {
-  if (lambda <= 0) return(Inf)
-  -poisson_loglikelihood(lambda, Y)
+  sil <- silhouette(km$cluster, dist(data_matrix))
+  silhouette_values[k] <- mean(sil[, 3])
 }
 
-# use optim to find MLE
-optim_result <- optim(
-  par = 1,  # initial guess
-  fn = neg_log_likelihood_poisson,
-  Y = blueprinty$patents,
-  method = "Brent",
-  lower = 0.001,
-  upper = 10
-)
+# plot elbow method
+plot(2:7, wcss_values[2:7], type = "b", pch = 19,
+     col = "steelblue", xlab = "Number of Clusters (K)",
+     ylab = "WCSS", main = "Elbow Method")
 
-# extract MLE estimate
-lambda_mle_optim <- optim_result$par
-cat("MLE estimate of lambda:", round(lambda_mle_optim, 3), "\n")
+# plot silhouette method
+plot(2:7, silhouette_values[2:7], type = "b", pch = 19,
+     col = "darkgreen", xlab = "Number of Clusters (K)",
+     ylab = "Silhouette Score", main = "Silhouette Method")
 ```
 
-### Estimation of Poisson Regression Model
+Both the elbow method and the silhouette method suggest that the best number of clusters is 3. In the elbow plot, the WCSS drops off quickly up to k = 3 and then starts to flatten out, which is a good sign that adding more clusters doesn’t help much. The silhouette scores also seem to peak around k = 3, which means the clusters are more clearly defined at that point. So based on both of these metrics, 3 clusters looks like the right choice for this data.
 
-Next, we extend our simple Poisson model to a Poisson Regression Model such that $Y_i = \text{Poisson}(\lambda_i)$ where $\lambda_i = \exp(X_i'\beta)$. The interpretation is that the success rate of patent awards is not constant across all firms ($\lambda$) but rather is a function of firm characteristics $X_i$. Specifically, we will use the covariates age, age squared, region, and whether the firm is a customer of Blueprinty.
+```{r, warning=FALSE, message=FALSE}
+# install magick once (do not run in .qmd)
+# install.packages("magick")
 
-```{r}
-# log-likelihood for Poisson regression
-poisson_regression_loglik <- function(beta, Y, X) {
-  eta <- X %*% beta                    
-  lambda <- exp(eta)                  
-  ll <- sum(Y * log(lambda) - lambda - lgamma(Y + 1))
-  return(ll)
-}
-```
+# load libraries
+library(magick)
 
-_todo: Use your function along with R's optim() or Python's sp.optimize() to find the MLE vector and the Hessian of the Poisson model with covariates. Specifically, the first column of X should be all 1's to enable a constant term in the model, and the subsequent columns should be age, age squared, binary variables for all but one of the regions, and the binary customer variable. Use the Hessian to find standard errors of the beta parameter estimates and present a table of coefficients and standard errors._
+# create frames directory
+dir.create("frames", showWarnings = FALSE)
 
-```{r}
-blueprinty$age2 <- blueprinty$age^2
+# save plots per iteration
+for (step in seq_along(result$history)) {
+  centroid_step <- as.data.frame(result$history[[step]])
+  names(centroid_step) <- c("bill_length_mm", "flipper_length_mm")
 
-# region dummy variables, dropping one region
-region_dummies <- model.matrix(~ region, data = blueprinty)[, -1]  # drops intercept & first level
+  step_title <- paste("Iteration", step - 1)
 
-# matrix
-X <- cbind(Intercept = 1,
-           age = blueprinty$age,
-           age2 = blueprinty$age2,
-           region_dummies,
-           iscustomer = blueprinty$iscustomer)
+  step_plot <- ggplot(penguins_clean, aes(bill_length_mm, flipper_length_mm)) +
+    geom_point(aes(color = custom_cluster), alpha = 0.6) +
+    geom_point(data = centroid_step,
+               aes(bill_length_mm, flipper_length_mm),
+               color = "black", shape = 8, size = 4) +
+    labs(
+      title = step_title,
+      x = "Bill Length (mm)",
+      y = "Flipper Length (mm)"
+    ) +
+    theme_minimal()
 
-Y <- blueprinty$patents
-
-# define log-likelihood function
-neg_loglik <- function(beta, Y, X) {
-  eta <- X %*% beta
-  lambda <- exp(eta)
-  -sum(Y * log(lambda) - lambda - lgamma(Y + 1))  # negative
+  ggsave(sprintf("frames/frame_%02d.png", step), plot = step_plot, width = 6, height = 5)
 }
 
-# optimize using optim()
-init_beta <- rep(0, ncol(X))  
-fit <- optim(
-  par = init_beta,
-  fn = neg_loglik,
-  Y = Y,
-  X = X,
-  hessian = TRUE,
-  method = "BFGS"
-)
-
-# extract coefficients & standard errors
-beta_hat <- fit$par
-hessian <- fit$hessian
-se_beta <- sqrt(diag(solve(hessian)))
-
-# fix possible duplicate column names
-colnames_X <- make.names(colnames(X), unique = TRUE)
-
-# create & display coefficient table
-coef_table <- data.frame(
-  Term = colnames_X,
-  Coefficient = beta_hat,
-  Std_Error = se_beta
-)
-
-knitr::kable(coef_table, digits = 3, caption = "Poisson Regression Coefficients and Standard Errors")
+# read saved frames and create gif
+frame_paths <- list.files("frames", full.names = TRUE)
+frame_images <- lapply(frame_paths, image_read)
+animated_gif <- image_animate(image_join(frame_images), fps = 1)
+image_write(animated_gif, "kmeans_animation.gif")
 ```
+### K-Means Animation
+
+To visualize how the custom K-means algorithm converges over time, each step of the clustering process was saved and animated. The animation shows how the centroids move during each iteration as the algorithm works toward a stable clustering of the penguins. By the final frames, the clusters are well-formed and the centroids have settled into consistent positions, matching the result suggested by the elbow and silhouette methods.
+
+```{r, echo=FALSE, out.width="80%", warning=FALSE, message=FALSE, fig.align='center'}
+knitr::include_graphics("kmeans_animation.gif")
+```
+These plots show how the clusters evolve during each iteration of the custom K-means algorithm. At first, the centroids are randomly placed and the clusters don’t line up with the structure in the data. But as the algorithm runs, the centroids quickly move into more meaningful positions. By around iteration 6 or 7, the centroids have mostly stabilized and the clusters are clearly defined, suggesting that the algorithm has converged.
+
+
+## 2a. K Nearest Neighbors
+
+In this section, I implement the K-nearest neighbors (KNN) algorithm from scratch and evaluate it on a synthetic classification dataset. I also compare the results to R’s built-in class::knn() function.
 
 ```{r}
-# fit Poisson regression using glm()
-glm_fit <- glm(
-  patents ~ age + I(age^2) + region + iscustomer,
-  data = blueprinty,
-  family = poisson(link = "log")
-)
+# generate synthetic data
+set.seed(42)
+n <- 100
+x1 <- runif(n, -3, 3)
+x2 <- runif(n, -3, 3)
+x <- cbind(x1, x2)
 
-summary(glm_fit)
+# define wiggly boundary
+boundary <- sin(4 * x1) + x1
+
+# assign binary outcome
+y <- ifelse(x2 > boundary, 1, 0) |> as.factor()
+
+# combine into dataframe
+dat <- data.frame(x1 = x1, x2 = x2, y = y)
 ```
 
-The Poisson regression results show that age and customer status are strong predictors of patent counts. Age has a positive effect, but the negative coefficient on age² indicates diminishing returns, suggesting patent activity peaks at a certain age. Being a customer increases expected patent counts by approximately 23%, holding other factors constant. Regional effects are not statistically significant, indicating that after adjusting for age and customer status, geography does not explain substantial variation in patent activity.
+This plot shows the synthetic classification dataset with two features, `x1` and `x2`, and a binary outcome `y`. Each point is colored by its class label, with the black dashed line showing the decision boundary defined by `sin(4 * x1) + x1`. Points above the curve are labeled as class 1, and points below are labeled as class 0. The boundary is non-linear and wavy, which makes the classification task more complex, a good setup for testing how well KNN can adapt to non-linear patterns in the data.
 
-::: {.callout-note title="Poisson Regression Summary"}
-- Age: Significant positive effect with diminishing returns (non-linear curve due to age²)
-- Customer status: Customers have ~23% more patents than non-customers (exp(0.208))
-- Region: No region has a statistically significant effect on patent counts
-- Model insight: Patent activity is best explained by age (with a peak) and customer conversion
-:::
-
-```{r}
-X_base <- cbind(
-  Intercept = 1,
-  age = blueprinty$age,
-  age2 = blueprinty$age^2,
-  model.matrix(~ region, data = blueprinty)[, -1],  # region dummies (drop intercept)
-  iscustomer = blueprinty$iscustomer
-)
-
-# create datasets
-X_0 <- X_base
-X_0[, "iscustomer"] <- 0
-
-X_1 <- X_base
-X_1[, "iscustomer"] <- 1
-
-# use beta_hat (from optim) 
-eta_0 <- X_0 %*% beta_hat
-eta_1 <- X_1 %*% beta_hat
-
-y_pred_0 <- exp(eta_0)
-y_pred_1 <- exp(eta_1)
-
-# average difference 
-avg_diff <- mean(y_pred_1 - y_pred_0)
-cat("Estimated average increase:", round(avg_diff, 3), "\n")
+```{r, fig.height=5, fig.width=6, fig.align='center'}
+# plot data with boundary
+# install.packages("ggplot2")     
+library(ggplot2)                 
+ggplot(dat, aes(x = x1, y = x2, color = y)) +
+  geom_point(size = 2, alpha = 0.8) +
+  
+  # add decision boundary
+  stat_function(fun = function(x) sin(4 * x) + x,
+                color = "black", linetype = "dashed", linewidth = 1) +
+  
+  labs(
+    title = "Synthetic Classification Data",
+    x = "X1",
+    y = "X2",
+    color = "Class (y)"
+  ) +
+  theme_minimal()
 ```
 
-## AirBnB Case Study
 
-### Introduction
+To find the best number of neighbors for the KNN classifier, the model was evaluated across a range of \( k \) values from 1 to 30. For each value of \( k \), the classification accuracy was calculated using the test dataset. The plot below shows how accuracy changes with different \( k \) values, which helps identify where the model performs best.
 
-AirBnB is a popular platform for booking short-term rentals. In March 2017, students Annika Awad, Evan Lebo, and Anna Linden scraped of 40,000 Airbnb listings from New York City.  The data include the following variables:
+```{r, message=FALSE, warning=FALSE, fig.height=5, fig.width=6, fig.align='center'}
+# load libraries
+library(class)
+library(ggplot2)
 
-:::: {.callout-note collapse="true"}
-### Variable Definitions
+# generate test data
+set.seed(123)  # new seed
+n_test <- 100
+x1_test <- runif(n_test, -3, 3)
+x2_test <- runif(n_test, -3, 3)
 
-    - `id` = unique ID number for each unit
-    - `last_scraped` = date when information scraped
-    - `host_since` = date when host first listed the unit on Airbnb
-    - `days` = `last_scraped` - `host_since` = number of days the unit has been listed
-    - `room_type` = Entire home/apt., Private room, or Shared room
-    - `bathrooms` = number of bathrooms
-    - `bedrooms` = number of bedrooms
-    - `price` = price per night (dollars)
-    - `number_of_reviews` = number of reviews for the unit on Airbnb
-    - `review_scores_cleanliness` = a cleanliness score from reviews (1-10)
-    - `review_scores_location` = a "quality of location" score from reviews (1-10)
-    - `review_scores_value` = a "quality of value" score from reviews (1-10)
-    - `instant_bookable` = "t" if instantly bookable, "f" if not
+# define boundary
+boundary_test <- sin(4 * x1_test) + x1_test
 
-::::
+# assign binary labels
+y_test <- ifelse(x2_test > boundary_test, 1, 0) |> as.factor()
 
-```{r, include=FALSE, warning=FALSE, message=FALSE}
-# check structure
-str(airbnb)
-summary(airbnb)
-colSums(is.na(airbnb))
+# combine into test dataframe
+test_dat <- data.frame(x1 = x1_test, x2 = x2_test, y = y_test)
 
-# drop observations with missing 
-airbnb_clean <- airbnb %>%
-  select(number_of_reviews, room_type, bathrooms, bedrooms, price,
-         review_scores_cleanliness, review_scores_location,
-         review_scores_value, instant_bookable) %>%
-  na.omit()
+# generate training data
+set.seed(42)
+n <- 100
+x1 <- runif(n, -3, 3)
+x2 <- runif(n, -3, 3)
+boundary <- sin(4 * x1) + x1
+y <- ifelse(x2 > boundary, 1, 0) |> as.factor()
+dat <- data.frame(x1 = x1, x2 = x2, y = y)
 
-# instant_bookable to binary
-airbnb_clean$instant_bookable <- ifelse(airbnb_clean$instant_bookable == "t", 1, 0)
+# generate test data
+set.seed(123)
+n_test <- 100
+x1_test <- runif(n_test, -3, 3)
+x2_test <- runif(n_test, -3, 3)
+boundary_test <- sin(4 * x1_test) + x1_test
+y_test <- ifelse(x2_test > boundary_test, 1, 0) |> as.factor()
+test_dat <- data.frame(x1 = x1_test, x2 = x2_test, y = y_test)
 
-# dummy variables 
-room_dummies <- model.matrix(~ room_type, data = airbnb_clean)[, -1]
+# prep inputs
+train_x <- dat[, c("x1", "x2")]
+train_y <- dat$y
+test_x <- test_dat[, c("x1", "x2")]
+test_y <- test_dat$y
 
-# x matrix
-X_airbnb <- cbind(
-  1,
-  airbnb_clean$bathrooms,
-  airbnb_clean$bedrooms,
-  airbnb_clean$price,
-  airbnb_clean$review_scores_cleanliness,
-  airbnb_clean$review_scores_location,
-  airbnb_clean$review_scores_value,
-  airbnb_clean$instant_bookable,
-  room_dummies
-)
+# define custom knn
+knn_custom <- function(train_x, train_y, test_x, k = 3) {
+  train_x <- as.matrix(train_x)
+  test_x <- as.matrix(test_x)
+  n_test <- nrow(test_x)
+  preds <- character(n_test)
 
-# number of reviews
-Y_airbnb <- airbnb_clean$number_of_reviews
+  for (i in 1:n_test) {
+    dists <- sqrt(rowSums((train_x - matrix(test_x[i, ], nrow = nrow(train_x), ncol = 2, byrow = TRUE))^2))
+    nn_idx <- order(dists)[1:k]
+    nn_labels <- as.character(train_y[nn_idx])
+    preds[i] <- names(which.max(table(nn_labels)))
+  }
+
+  return(as.factor(preds))
+}
+
+# evaluate accuracy over k
+accuracy_vec <- numeric(30)
+
+for (k in 1:30) {
+  preds_k <- as.character(knn_custom(train_x, train_y, test_x, k))
+  accuracy_vec[k] <- mean(preds_k == as.character(test_y)) * 100
+}
+
+# plot accuracy
+ggplot(data.frame(k = 1:30, accuracy = accuracy_vec), aes(x = k, y = accuracy)) +
+  geom_line(color = "steelblue", linewidth = 1.2) +
+  geom_point(color = "darkred", size = 2) +
+  labs(
+    title = "KNN Accuracy vs K",
+    x = "K (Neighbors)",
+    y = "Accuracy (%)"
+  ) +
+  theme_minimal()
 ```
 
-```{r}
-# glm() to fit Poisson model
-airbnb_model <- glm(
-  number_of_reviews ~ bathrooms + bedrooms + price +
-    review_scores_cleanliness + review_scores_location + review_scores_value +
-    instant_bookable + room_type,
-  data = airbnb_clean,
-  family = poisson(link = "log")
-)
-
-summary(airbnb_model)
-```
-
-This Poisson regression model examines how listing characteristics affect the number of reviews, used here as a proxy for bookings. The results show that bedroom count and review cleanliness scores have strong positive effects on review count, indicating that larger and cleaner listings attract more bookings.
-
-Higher prices are associated with fewer reviews, suggesting price sensitivity among renters. Interestingly, while location and value scores are typically seen as positive quality signals, they have significant negative coefficients — which may reflect reverse causality, data quality issues, or confounding factors (e.g., higher-scoring locations already having high competition or price).
-
-Room type also plays a role: private rooms receive more reviews than entire homes (the baseline), while shared rooms receive fewer. The instant_bookable variable was excluded due to collinearity or lack of variation.
-
-Overall, the model confirms that listing attributes, epecially quality signals and room configuration, meaningfully influence booking behavior on the platform.
-
-::: {.callout-note title="Key Findings"}
-- Bathrooms: More bathrooms → fewer reviews (surprising, possibly due to correlation with higher-end/less frequently booked properties)
-- Bedrooms: More bedrooms → more reviews (larger listings are more popular)
-- Price: Higher price → fewer reviews (suggests price sensitivity among renters)
-- Review scores:
-  - Cleanliness: Higher score → more reviews (clear signal of quality)
-  - Location & Value: Higher scores → fewer reviews (unexpected; may reflect underlying data quirks)
-- Room type:
-  - Private room → more reviews than entire homes
-  - Shared room → fewer reviews than entire homes
-- Instant bookable: Dropped due to collinearity or lack of variation; revisit in preprocessing if needed
-:::
+The plot shows accuracy starts off a little unstable for smaller k values, dipping as low as 90%, but then improves steadily. The highest accuracy reaches 98% at several values, including around k = 18 and k = 23. After that point, the accuracy levels out and remains high, suggesting that the model is stable with larger k values. Overall, this suggests that k = 18–23 is a good range to use, with strong and consistent performance.
 
 
 
