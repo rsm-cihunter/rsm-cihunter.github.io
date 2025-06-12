@@ -312,6 +312,3 @@ ggplot(data.frame(k = 1:30, accuracy = accuracy_vec), aes(x = k, y = accuracy)) 
 ```
 
 The plot shows accuracy starts off a little unstable for smaller k values, dipping as low as 90%, but then improves steadily. The highest accuracy reaches 98% at several values, including around k = 18 and k = 23. After that point, the accuracy levels out and remains high, suggesting that the model is stable with larger k values. Overall, this suggests that k = 18–23 is a good range to use, with strong and consistent performance.
-
-
-
